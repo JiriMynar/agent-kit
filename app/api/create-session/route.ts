@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+
 import { WORKFLOW_ID } from "@/lib/config";
 
 interface CreateSessionRequestBody {
@@ -19,25 +22,17 @@ export async function POST(request: Request): Promise<Response> {
   if (request.method !== "POST") {
     return methodNotAllowedResponse();
   }
-  let sessionCookie: string | null = null;
   try {
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
-      return new Response(
-        JSON.stringify({
-          error: "Missing OPENAI_API_KEY environment variable",
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        }
+      return NextResponse.json(
+        { error: "Missing OPENAI_API_KEY environment variable" },
+        { status: 500 }
       );
     }
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
-    const { userId, sessionCookie: resolvedSessionCookie } =
-      await resolveUserId(request);
-    sessionCookie = resolvedSessionCookie;
+    const userId = ensureUserIdCookie();
     const resolvedWorkflowId =
       parsedBody?.workflow?.id ?? parsedBody?.workflowId ?? WORKFLOW_ID;
 
@@ -49,12 +44,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     if (!resolvedWorkflowId) {
-      return buildJsonResponse(
-        { error: "Missing workflow id" },
-        400,
-        { "Content-Type": "application/json" },
-        sessionCookie
-      );
+      return NextResponse.json({ error: "Missing workflow id" }, { status: 400 });
     }
 
     const apiBase = process.env.CHATKIT_API_BASE ?? DEFAULT_CHATKIT_BASE;
@@ -96,16 +86,14 @@ export async function POST(request: Request): Promise<Response> {
         statusText: upstreamResponse.statusText,
         body: upstreamJson,
       });
-      return buildJsonResponse(
+      return NextResponse.json(
         {
           error:
             upstreamError ??
             `Failed to create session: ${upstreamResponse.statusText}`,
           details: upstreamJson,
         },
-        upstreamResponse.status,
-        { "Content-Type": "application/json" },
-        sessionCookie
+        { status: upstreamResponse.status }
       );
     }
 
@@ -116,20 +104,10 @@ export async function POST(request: Request): Promise<Response> {
       expires_after: expiresAfter,
     };
 
-    return buildJsonResponse(
-      responsePayload,
-      200,
-      { "Content-Type": "application/json" },
-      sessionCookie
-    );
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("Create session error", error);
-    return buildJsonResponse(
-      { error: "Unexpected error" },
-      500,
-      { "Content-Type": "application/json" },
-      sessionCookie
-    );
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
 
@@ -138,22 +116,14 @@ export async function GET(): Promise<Response> {
 }
 
 function methodNotAllowedResponse(): Response {
-  return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
-    status: 405,
-    headers: { "Content-Type": "application/json" },
-  });
+  return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
 }
 
-async function resolveUserId(request: Request): Promise<{
-  userId: string;
-  sessionCookie: string | null;
-}> {
-  const existing = getCookieValue(
-    request.headers.get("cookie"),
-    SESSION_COOKIE_NAME
-  );
-  if (existing) {
-    return { userId: existing, sessionCookie: null };
+function ensureUserIdCookie(): string {
+  const cookieStore = cookies();
+  const existing = cookieStore.get(SESSION_COOKIE_NAME);
+  if (existing?.value) {
+    return existing.value;
   }
 
   const generated =
@@ -161,64 +131,15 @@ async function resolveUserId(request: Request): Promise<{
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2);
 
-  return {
-    userId: generated,
-    sessionCookie: serializeSessionCookie(generated),
-  };
-}
-
-function getCookieValue(
-  cookieHeader: string | null,
-  name: string
-): string | null {
-  if (!cookieHeader) {
-    return null;
-  }
-
-  const cookies = cookieHeader.split(";");
-  for (const cookie of cookies) {
-    const [rawName, ...rest] = cookie.split("=");
-    if (!rawName || rest.length === 0) {
-      continue;
-    }
-    if (rawName.trim() === name) {
-      return rest.join("=").trim();
-    }
-  }
-  return null;
-}
-
-function serializeSessionCookie(value: string): string {
-  const attributes = [
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(value)}`,
-    "Path=/",
-    `Max-Age=${SESSION_COOKIE_MAX_AGE}`,
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-
-  if (process.env.NODE_ENV === "production") {
-    attributes.push("Secure");
-  }
-  return attributes.join("; ");
-}
-
-function buildJsonResponse(
-  payload: unknown,
-  status: number,
-  headers: Record<string, string>,
-  sessionCookie: string | null
-): Response {
-  const responseHeaders = new Headers(headers);
-
-  if (sessionCookie) {
-    responseHeaders.append("Set-Cookie", sessionCookie);
-  }
-
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: responseHeaders,
+  cookieStore.set(SESSION_COOKIE_NAME, generated, {
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: SESSION_COOKIE_MAX_AGE,
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
   });
+
+  return generated;
 }
 
 async function safeParseJson<T>(req: Request): Promise<T | null> {
