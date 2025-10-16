@@ -32,7 +32,23 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
-    const userId = ensureUserIdCookie();
+
+    const cookieStore = cookies();
+    const existingUserId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    const userId = existingUserId ??
+      (typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2));
+
+    if (!existingUserId) {
+      cookieStore.set(SESSION_COOKIE_NAME, userId, {
+        httpOnly: true,
+        sameSite: "lax",
+        maxAge: SESSION_COOKIE_MAX_AGE,
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      });
+    }
     const resolvedWorkflowId =
       parsedBody?.workflow?.id ?? parsedBody?.workflowId ?? WORKFLOW_ID;
 
@@ -117,29 +133,6 @@ export async function GET(): Promise<Response> {
 
 function methodNotAllowedResponse(): Response {
   return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
-}
-
-function ensureUserIdCookie(): string {
-  const cookieStore = cookies();
-  const existing = cookieStore.get(SESSION_COOKIE_NAME);
-  if (existing?.value) {
-    return existing.value;
-  }
-
-  const generated =
-    typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-
-  cookieStore.set(SESSION_COOKIE_NAME, generated, {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: SESSION_COOKIE_MAX_AGE,
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
-  });
-
-  return generated;
 }
 
 async function safeParseJson<T>(req: Request): Promise<T | null> {
