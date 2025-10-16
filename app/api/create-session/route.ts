@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { WORKFLOW_ID } from "@/lib/config";
@@ -33,7 +32,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
 
-    const cookieStore = cookies();
+    const cookieStore = request.cookies;
     const existingUserId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
     const userId = existingUserId ?? (
@@ -49,7 +48,7 @@ export async function POST(request: Request): Promise<Response> {
         maxAge: SESSION_COOKIE_MAX_AGE,
         path: "/",
         secure: process.env.NODE_ENV === "production",
-      });
+      } );
     }
     const resolvedWorkflowId =
       parsedBody?.workflow?.id ?? parsedBody?.workflowId ?? WORKFLOW_ID;
