@@ -1,9 +1,16 @@
 import { ColorScheme, StartScreenPrompt, ThemeOption } from "@openai/chatkit";
 
+const DEFAULT_CHATKIT_SCRIPT_URL =
+  "https://cdn.platform.openai.com/deployments/chatkit/chatkit.js";
+
 export const WORKFLOW_ID =
   process.env.NEXT_PUBLIC_CHATKIT_WORKFLOW_ID?.trim() ?? "";
 
 export const CREATE_SESSION_ENDPOINT = "/api/create-session";
+
+export const CHATKIT_SCRIPT_URL =
+  process.env.NEXT_PUBLIC_CHATKIT_SCRIPT_URL?.trim() ??
+  DEFAULT_CHATKIT_SCRIPT_URL;
 
 export const STARTER_PROMPTS: StartScreenPrompt[] = [
   {
