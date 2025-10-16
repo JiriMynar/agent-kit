@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { WORKFLOW_ID } from "@/lib/config";
@@ -33,7 +32,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
 
-    const cookieStore = cookies();
+    const cookieStore = request.cookies;
     const existingUserId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
     const userId = existingUserId ?? (
