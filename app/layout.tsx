@@ -1,5 +1,5 @@
-import Script from "next/script";
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,13 +14,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
+      <body className="antialiased">
+        {children}
         <Script
-          src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js"
-          strategy="beforeInteractive"
+          src="https://cdn.openai.com/chatkit/v1/chatkit.js"
+          strategy="afterInteractive"
         />
-      </head>
-      <body className="antialiased">{children}</body>
+      </body>
     </html>
   );
 }

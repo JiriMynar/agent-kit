@@ -263,7 +263,7 @@ export function ChatKitPanel({
 
   const chatkit = useChatKit({
     api: { getClientSecret },
-    scriptUrl: "https://cdn.openai.com/chatkit/v1/chatkit.js",
+
     theme: {
       colorScheme: theme,
       ...getThemeConfig(theme),
