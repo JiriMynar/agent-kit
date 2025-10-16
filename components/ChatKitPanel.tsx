@@ -59,20 +59,12 @@ export function ChatKitPanel({
   const [errors, setErrors] = useState<ErrorState>(() => createInitialErrors());
   const [isInitializingSession, setIsInitializingSession] = useState(true);
   const isMountedRef = useRef(true);
-  const [scriptStatus, setScriptStatus] = useState<
-    "pending" | "ready" | "error"
-  >(() =>
-    isBrowser &&
-    window.ChatKit &&
-    window.customElements?.get("openai-chatkit")
-      ? "ready"
-      : "pending"
-  );
   const [isChatKitAvailable, setIsChatKitAvailable] = useState(() =>
     isBrowser &&
     Boolean(window.ChatKit && window.customElements?.get("openai-chatkit"))
   );
   const [widgetInstanceKey, setWidgetInstanceKey] = useState(0);
+  const [scriptCheckVersion, bumpScriptCheckVersion] = useState(0);
 
   const setErrorState = useCallback((updates: Partial<ErrorState>) => {
     setErrors((current) => ({ ...current, ...updates }));
@@ -85,84 +77,63 @@ export function ChatKitPanel({
   }, []);
 
   useEffect(() => {
-    if (!isBrowser) {
+    if (!isBrowser || isChatKitAvailable) {
       return;
     }
 
+    let pollIntervalId: number | undefined;
     let timeoutId: number | undefined;
 
-    const ensureChatKitReady = () => {
-      if (window.ChatKit && window.customElements?.get("openai-chatkit")) {
+    const checkAvailability = () => {
+      const available = Boolean(
+        window.ChatKit && window.customElements?.get("openai-chatkit")
+      );
+
+      if (available && isMountedRef.current) {
         setIsChatKitAvailable(true);
-        setScriptStatus("ready");
         setErrorState({ script: null });
-        return true;
       }
-      return false;
+
+      return available;
     };
 
-    const handleLoaded = () => {
-      if (!isMountedRef.current) {
-        return;
-      }
-      ensureChatKitReady();
-    };
-
-    const handleError = (event: Event) => {
-      console.error("Failed to load chatkit.js for some reason", event);
-      if (!isMountedRef.current) {
-        return;
-      }
-      setScriptStatus("error");
-      const detail = (event as CustomEvent<unknown>)?.detail ?? "unknown error";
-      setErrorState({ script: `Error: ${detail}`, retryable: false });
-      setIsChatKitAvailable(false);
-      setIsInitializingSession(false);
-    };
-
-    window.addEventListener("chatkit-script-loaded", handleLoaded);
-    window.addEventListener(
-      "chatkit-script-error",
-      handleError as EventListener
-    );
-
-    let pollIntervalId: number | undefined;
-
-    if (ensureChatKitReady()) {
-      // already ready
-    } else if (scriptStatus === "pending") {
+    if (!checkAvailability()) {
       pollIntervalId = window.setInterval(() => {
-        if (ensureChatKitReady() && pollIntervalId) {
+        if (checkAvailability() && pollIntervalId) {
           window.clearInterval(pollIntervalId);
           pollIntervalId = undefined;
         }
       }, 200);
+
       timeoutId = window.setTimeout(() => {
-        if (!ensureChatKitReady()) {
-          handleError(
-            new CustomEvent("chatkit-script-error", {
-              detail:
-                "ChatKit web component is unavailable. Verify that the script URL is reachable.",
-            })
+        if (!checkAvailability() && isMountedRef.current) {
+          console.error(
+            "ChatKit web component is unavailable. Verify that the script URL is reachable."
           );
+          setErrorState({
+            script:
+              "Error: ChatKit web component is unavailable. Verify that the script URL is reachable.",
+            retryable: false,
+          });
+          setIsChatKitAvailable(false);
+          setIsInitializingSession(false);
+          if (pollIntervalId) {
+            window.clearInterval(pollIntervalId);
+            pollIntervalId = undefined;
+          }
         }
       }, 5000);
     }
 
     return () => {
-      window.removeEventListener("chatkit-script-loaded", handleLoaded);
-      window.removeEventListener(
-        "chatkit-script-error",
-        handleError as EventListener
-      );
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
-      }
       if (pollIntervalId) {
         window.clearInterval(pollIntervalId);
       }
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
     };
-  }, [scriptStatus, setErrorState]);
+  }, [isChatKitAvailable, scriptCheckVersion, setErrorState]);
 
   const isWorkflowConfigured = Boolean(
     WORKFLOW_ID && !WORKFLOW_ID.startsWith("wf_replace")
@@ -181,16 +152,15 @@ export function ChatKitPanel({
   const handleResetChat = useCallback(() => {
     processedFacts.current.clear();
     if (isBrowser) {
-      const hasChatKit = Boolean(
-        window.ChatKit && window.customElements?.get("openai-chatkit")
+      setIsChatKitAvailable(
+        Boolean(window.ChatKit && window.customElements?.get("openai-chatkit"))
       );
-      setScriptStatus(hasChatKit ? "ready" : "pending");
-      setIsChatKitAvailable(hasChatKit);
     }
     setIsInitializingSession(true);
     setErrors(createInitialErrors());
     setWidgetInstanceKey((prev) => prev + 1);
-  }, []);
+    bumpScriptCheckVersion((prev) => prev + 1);
+  }, [bumpScriptCheckVersion]);
 
   const getClientSecret = useCallback(
     async (currentSecret: string | null) => {
@@ -373,7 +343,6 @@ export function ChatKitPanel({
     console.debug("[ChatKitPanel] render state", {
       isInitializingSession,
       hasControl: Boolean(chatkit.control),
-      scriptStatus,
       isChatKitAvailable,
       hasError: Boolean(blockingError),
       workflowId: WORKFLOW_ID,
