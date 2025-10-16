@@ -8,7 +8,6 @@ import {
   GREETING,
   CREATE_SESSION_ENDPOINT,
   WORKFLOW_ID,
-  CHATKIT_SCRIPT_URL,
   getThemeConfig,
 } from "@/lib/config";
 import { ErrorOverlay } from "./ErrorOverlay";
@@ -264,7 +263,6 @@ export function ChatKitPanel({
 
   const chatkit = useChatKit({
     api: { getClientSecret },
-    scriptUrl: CHATKIT_SCRIPT_URL,
     theme: {
       colorScheme: theme,
       ...getThemeConfig(theme),
