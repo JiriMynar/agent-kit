@@ -35,10 +35,12 @@ export async function POST(request: Request): Promise<Response> {
 
     const cookieStore = cookies();
     const existingUserId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-    const userId = existingUserId ??
-      (typeof crypto.randomUUID === "function"
+
+    const userId = existingUserId ?? (
+      typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2));
+        : Math.random().toString(36).slice(2)
+    );
 
     if (!existingUserId) {
       cookieStore.set(SESSION_COOKIE_NAME, userId, {
