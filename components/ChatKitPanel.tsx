@@ -33,6 +33,12 @@ type ErrorState = {
   retryable: boolean;
 };
 
+declare global {
+  interface Window {
+    ChatKit?: unknown;
+  }
+}
+
 const isBrowser = typeof window !== "undefined";
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -56,9 +62,15 @@ export function ChatKitPanel({
   const [scriptStatus, setScriptStatus] = useState<
     "pending" | "ready" | "error"
   >(() =>
-    isBrowser && window.customElements?.get("openai-chatkit")
+    isBrowser &&
+    window.ChatKit &&
+    window.customElements?.get("openai-chatkit")
       ? "ready"
       : "pending"
+  );
+  const [isChatKitAvailable, setIsChatKitAvailable] = useState(() =>
+    isBrowser &&
+    Boolean(window.ChatKit && window.customElements?.get("openai-chatkit"))
   );
   const [widgetInstanceKey, setWidgetInstanceKey] = useState(0);
 
@@ -79,12 +91,21 @@ export function ChatKitPanel({
 
     let timeoutId: number | undefined;
 
+    const ensureChatKitReady = () => {
+      if (window.ChatKit && window.customElements?.get("openai-chatkit")) {
+        setIsChatKitAvailable(true);
+        setScriptStatus("ready");
+        setErrorState({ script: null });
+        return true;
+      }
+      return false;
+    };
+
     const handleLoaded = () => {
       if (!isMountedRef.current) {
         return;
       }
-      setScriptStatus("ready");
-      setErrorState({ script: null });
+      ensureChatKitReady();
     };
 
     const handleError = (event: Event) => {
@@ -95,6 +116,7 @@ export function ChatKitPanel({
       setScriptStatus("error");
       const detail = (event as CustomEvent<unknown>)?.detail ?? "unknown error";
       setErrorState({ script: `Error: ${detail}`, retryable: false });
+      setIsChatKitAvailable(false);
       setIsInitializingSession(false);
     };
 
@@ -104,11 +126,19 @@ export function ChatKitPanel({
       handleError as EventListener
     );
 
-    if (window.customElements?.get("openai-chatkit")) {
-      handleLoaded();
+    let pollIntervalId: number | undefined;
+
+    if (ensureChatKitReady()) {
+      // already ready
     } else if (scriptStatus === "pending") {
+      pollIntervalId = window.setInterval(() => {
+        if (ensureChatKitReady() && pollIntervalId) {
+          window.clearInterval(pollIntervalId);
+          pollIntervalId = undefined;
+        }
+      }, 200);
       timeoutId = window.setTimeout(() => {
-        if (!window.customElements?.get("openai-chatkit")) {
+        if (!ensureChatKitReady()) {
           handleError(
             new CustomEvent("chatkit-script-error", {
               detail:
@@ -127,6 +157,9 @@ export function ChatKitPanel({
       );
       if (timeoutId) {
         window.clearTimeout(timeoutId);
+      }
+      if (pollIntervalId) {
+        window.clearInterval(pollIntervalId);
       }
     };
   }, [scriptStatus, setErrorState]);
@@ -148,9 +181,11 @@ export function ChatKitPanel({
   const handleResetChat = useCallback(() => {
     processedFacts.current.clear();
     if (isBrowser) {
-      setScriptStatus(
-        window.customElements?.get("openai-chatkit") ? "ready" : "pending"
+      const hasChatKit = Boolean(
+        window.ChatKit && window.customElements?.get("openai-chatkit")
       );
+      setScriptStatus(hasChatKit ? "ready" : "pending");
+      setIsChatKitAvailable(hasChatKit);
     }
     setIsInitializingSession(true);
     setErrors(createInitialErrors());
@@ -339,6 +374,7 @@ export function ChatKitPanel({
       isInitializingSession,
       hasControl: Boolean(chatkit.control),
       scriptStatus,
+      isChatKitAvailable,
       hasError: Boolean(blockingError),
       workflowId: WORKFLOW_ID,
     });
@@ -346,15 +382,19 @@ export function ChatKitPanel({
 
   return (
     <div className="relative pb-8 flex h-[90vh] w-full rounded-2xl flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
-      <ChatKit
-        key={widgetInstanceKey}
-        control={chatkit.control}
-        className={
-          blockingError || isInitializingSession
-            ? "pointer-events-none opacity-0"
-            : "block h-full w-full"
-        }
-      />
+      {isChatKitAvailable ? (
+        <ChatKit
+          key={widgetInstanceKey}
+          control={chatkit.control}
+          className={
+            blockingError || isInitializingSession
+              ? "pointer-events-none opacity-0"
+              : "block h-full w-full"
+          }
+        />
+      ) : (
+        <div className="h-full w-full" aria-hidden />
+      )}
       <ErrorOverlay
         error={blockingError}
         fallbackMessage={
