@@ -49,7 +49,7 @@ export async function POST(request: Request): Promise<Response> {
         maxAge: SESSION_COOKIE_MAX_AGE,
         path: "/",
         secure: process.env.NODE_ENV === "production",
-      });
+      } );
     }
     const resolvedWorkflowId =
       parsedBody?.workflow?.id ?? parsedBody?.workflowId ?? WORKFLOW_ID;
