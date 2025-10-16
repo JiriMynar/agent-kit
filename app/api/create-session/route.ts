@@ -32,8 +32,10 @@ export async function POST(request: Request): Promise<Response> {
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
 
-    const cookieStore = request.cookies;
-    const existingUserId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+    const existingUserId = getCookieValue(
+      request.headers.get("cookie"),
+      SESSION_COOKIE_NAME
+    );
 
     const userId = existingUserId ?? (
       typeof crypto.randomUUID === "function"
@@ -41,15 +43,6 @@ export async function POST(request: Request): Promise<Response> {
         : Math.random().toString(36).slice(2)
     );
 
-    if (!existingUserId) {
-      cookieStore.set(SESSION_COOKIE_NAME, userId, {
-        httpOnly: true,
-        sameSite: "lax",
-        maxAge: SESSION_COOKIE_MAX_AGE,
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      } );
-    }
     const resolvedWorkflowId =
       parsedBody?.workflow?.id ?? parsedBody?.workflowId ?? WORKFLOW_ID;
 
@@ -121,7 +114,19 @@ export async function POST(request: Request): Promise<Response> {
       expires_after: expiresAfter,
     };
 
-    return NextResponse.json(responsePayload);
+    const response = NextResponse.json(responsePayload);
+
+    if (!existingUserId) {
+      response.cookies.set(SESSION_COOKIE_NAME, userId, {
+        httpOnly: true,
+        sameSite: "lax",
+        maxAge: SESSION_COOKIE_MAX_AGE,
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error("Create session error", error);
     return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
@@ -146,6 +151,22 @@ async function safeParseJson<T>(req: Request): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+function getCookieValue(cookieHeader: string | null, name: string): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const cookies = cookieHeader.split(";");
+  for (const cookie of cookies) {
+    const [cookieName, ...rest] = cookie.trim().split("=");
+    if (cookieName === name) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+
+  return null;
 }
 
 function extractUpstreamError(
