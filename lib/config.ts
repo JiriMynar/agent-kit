@@ -6,6 +6,10 @@ const DEFAULT_CHATKIT_SCRIPT_URL =
 export const WORKFLOW_ID =
   process.env.NEXT_PUBLIC_CHATKIT_WORKFLOW_ID?.trim() ?? "";
 
+export const AGENTKIT_WORKFLOW_ID =
+  process.env.NEXT_PUBLIC_AGENTKIT_WORKFLOW_ID?.trim() ??
+  "wkf_your_agentkit_workflow_id_here";
+
 export const CREATE_SESSION_ENDPOINT = "/api/create-session";
 
 export const CHATKIT_SCRIPT_URL =
